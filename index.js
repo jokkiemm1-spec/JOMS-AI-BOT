@@ -1,5 +1,5 @@
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, delay, Browsers } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, Browsers } = require('@whiskeysockets/baileys');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,7 +12,6 @@ async function startBot() {
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        // THIS IS THE FIX: This tells WhatsApp we are connecting via Google Chrome on desktop
         browser: Browsers.macOS('Desktop') 
     });
 
@@ -22,9 +21,8 @@ async function startBot() {
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
-                // Your formatted number
                 let phoneNumber = "2349036106257"; 
-                console.log(`[JOMS AI BOT] Linking request sent to WhatsApp for ${phoneNumber}...`);
+                console.log(`[JOMS AI BOT] Sending stabilized pairing request for ${phoneNumber}...`);
                 
                 let code = await sock.requestPairingCode(phoneNumber);
                 
@@ -32,9 +30,9 @@ async function startBot() {
                 console.log(`🤖 JOMS AI BOT PAIRING CODE: ${code}`);
                 console.log('====================================\n');
             } catch (err) {
-                console.log("Error generating pairing code: ", err);
+                console.log("[JOMS AI BOT] Pairing attempt failed: ", err.message || err);
             }
-        }, 6000); // Give the connection 6 seconds to initialize fully
+        }, 15000); 
     }
 
     // Handle Messages
