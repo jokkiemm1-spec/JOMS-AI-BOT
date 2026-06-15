@@ -1,18 +1,44 @@
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Web page display for Render
 app.get('/', (req, res) => res.send('<h1>JOMS AI BOT Server is Online! ⚡</h1>'));
 app.listen(PORT, () => console.log('JOMS AI BOT server listening on port ' + PORT));
+
+// Automatically locate the local Chrome installed by Puppeteer on Render
+let chromePath = undefined;
+try {
+    const baseCachePath = path.join('/opt/render/.cache/puppeteer/chrome');
+    if (fs.existsSync(baseCachePath)) {
+        const folders = fs.readdirSync(baseCachePath);
+        if (folders.length > 0) {
+            const linuxFolder = path.join(baseCachePath, folders[0], 'chrome-linux64');
+            if (fs.existsSync(linuxFolder)) {
+                chromePath = path.join(linuxFolder, 'chrome');
+                console.log('Found local Chrome binary at:', chromePath);
+            }
+        }
+    }
+} catch (e) {
+    console.log('Error locating Chrome cache, attempting auto-resolve...');
+}
 
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+        executablePath: chromePath, // Uses detected local build path if found
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-extensions',
+            '--no-first-run',
+            '--no-zygote'
+        ] 
     }
 });
 
