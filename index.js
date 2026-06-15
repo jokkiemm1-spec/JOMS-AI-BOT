@@ -1,10 +1,17 @@
 const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('<h1>JOMS AI BOT Server is Online! ⚡</h1>'));
 app.listen(PORT, () => console.log('Server running on port ' + PORT));
+
+// FORCE CLEAN ACCUMULATED DATA CORRUPTION ON BOOT
+if (fs.existsSync('auth_info_baileys')) {
+    console.log('[JOMS AI BOT] Purging stale session cache for a clean link layer...');
+    fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+}
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -12,7 +19,6 @@ async function startBot() {
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        // CHANGED: Using the mobile device protocol bypasses browser fingerprint firewalls
         browser: ["Ubuntu", "Chrome", "20.0.0.4"]
     });
 
@@ -23,9 +29,8 @@ async function startBot() {
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('[JOMS AI BOT] Connection closed. Retrying link layer...', shouldReconnect);
+            console.log('[JOMS AI BOT] Socket closed. Spinning up reconnect frame...', shouldReconnect);
             if (shouldReconnect) {
-                // Short wait before rebuilding socket frame
                 setTimeout(() => startBot(), 5000);
             }
         } 
@@ -35,12 +40,12 @@ async function startBot() {
         }
     });
 
-    // Request pairing layer independently to let core connections sync first
+    // Request fresh pairing layer independently
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
                 let phoneNumber = "2349036106257"; 
-                console.log(`[JOMS AI BOT] Dispatched clean connection code request for: ${phoneNumber}`);
+                console.log(`[JOMS AI BOT] Requesting pairing code for stable line: ${phoneNumber}...`);
                 
                 let code = await sock.requestPairingCode(phoneNumber);
                 
@@ -48,9 +53,9 @@ async function startBot() {
                 console.log(`🤖 JOMS AI BOT PAIRING CODE: ${code}`);
                 console.log('====================================\n');
             } catch (err) {
-                console.log("[JOMS AI BOT] Request paused by server. Retrying next cycle...");
+                console.log("[JOMS AI BOT] Pairing channel busy, waiting for next cycle...");
             }
-        }, 20000); // 20-second breathing room for cloud environments
+        }, 15000); 
     }
 
     sock.ev.on('messages.upsert', async m => {
@@ -61,7 +66,7 @@ async function startBot() {
         const from = msg.key.remoteJid;
 
         if (text.toLowerCase().trim() === '!ping') {
-            await sock.sendMessage(from, { text: 'Pong! 🏓\n_JOMS AI BOT is running fast!_' });
+            await sock.sendMessage(from, { text: 'Pong! 🏓' });
         } else if (text.toLowerCase().trim() === '!hello') {
             await sock.sendMessage(from, { text: 'Hello! I am *JOMS AI BOT* 🤖' });
         }
