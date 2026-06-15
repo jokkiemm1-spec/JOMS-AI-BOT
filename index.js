@@ -1,76 +1,70 @@
-const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const readline = require('readline');
 const fs = require('fs');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('<h1>JOMS AI BOT Server is Online! ⚡</h1>'));
-app.listen(PORT, () => console.log('Server running on port ' + PORT));
-
-// FORCE CLEAN ACCUMULATED DATA CORRUPTION ON BOOT
-if (fs.existsSync('auth_info_baileys')) {
-    console.log('[JOMS AI BOT] Purging stale session cache for a clean link layer...');
-    fs.rmSync('auth_info_baileys', { recursive: true, force: true });
-}
+// Helper to handle terminal input safely
+const question = (text) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise((resolve) => rl.question(text, (ans) => { rl.close(); resolve(ans); }));
+};
 
 async function startBot() {
+    // Local folder to store your session keys permanently
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
-        browser: ["Ubuntu", "Chrome", "20.0.0.4"]
+        printQRInTerminal: false, 
+        logger: pino({ level: 'silent' }),
+        
+        // This configuration makes it appear exactly as Chrome on macOS in your Linked Devices
+        browser: ["Chrome", "macOS", "120.0.0.0"] 
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
-
+    sock.ev.on('connection.update', ({ connection }) => {
+        if (connection === 'open') {
+            console.log('\n📶 JOMS AI BOT is successfully connected and online! 🎉');
+        }
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('[JOMS AI BOT] Socket closed. Spinning up reconnect frame...', shouldReconnect);
-            if (shouldReconnect) {
-                setTimeout(() => startBot(), 5000);
-            }
-        } 
-        
-        else if (connection === 'open') {
-            console.log('📶 [JOMS AI BOT] Secure connection established with WhatsApp servers!');
+            console.log('Connection dropped, reconnecting...');
+            startBot();
         }
     });
 
-    // Request fresh pairing layer independently
+    // Request the pairing code if not logged in
     if (!sock.authState.creds.registered) {
+        console.log("=== JOMS AI BOT LOCAL PAIRING ===");
+        
+        let phoneNumber = await question('Enter your WhatsApp phone number (with country code, e.g., 2349036106257): ');
+        phoneNumber = phoneNumber.replace(/[^0-9]/g, ''); // Clean up spacing/symbols
+
+        if (!phoneNumber) {
+            console.log('Invalid phone number. Restart the script and try again.');
+            process.exit(0);
+        }
+
+        console.log(`\n[JOMS AI BOT] Contacting WhatsApp for pairing code...`);
+        
         setTimeout(async () => {
             try {
-                let phoneNumber = "2349036106257"; 
-                console.log(`[JOMS AI BOT] Requesting pairing code for stable line: ${phoneNumber}...`);
-                
                 let code = await sock.requestPairingCode(phoneNumber);
                 
                 console.log('\n====================================');
-                console.log(`🤖 JOMS AI BOT PAIRING CODE: ${code}`);
+                console.log(`🤖 YOUR PAIRING CODE: ${code}`);
                 console.log('====================================\n');
+                console.log('Steps to link:');
+                console.log('1. Open WhatsApp on your phone.');
+                console.log('2. Go to Settings -> Linked Devices -> Link a Device.');
+                console.log('3. Select "Link with phone number instead" at the bottom.');
+                console.log('4. Enter the 8-digit code shown above.');
             } catch (err) {
-                console.log("[JOMS AI BOT] Pairing channel busy, waiting for next cycle...");
+                console.error('[JOMS AI BOT] Failed to generate code. Error details:', err.message);
             }
-        }, 15000); 
+        }, 3000);
     }
-
-    sock.ev.on('messages.upsert', async m => {
-        const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
-
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-        const from = msg.key.remoteJid;
-
-        if (text.toLowerCase().trim() === '!ping') {
-            await sock.sendMessage(from, { text: 'Pong! 🏓' });
-        } else if (text.toLowerCase().trim() === '!hello') {
-            await sock.sendMessage(from, { text: 'Hello! I am *JOMS AI BOT* 🤖' });
-        }
-    });
 }
 
 startBot();
