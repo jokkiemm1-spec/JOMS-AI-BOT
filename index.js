@@ -1,5 +1,5 @@
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, delay, Browsers } = require('@whiskeysockets/baileys');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,7 +11,9 @@ async function startBot() {
     
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false // We will use pairing code instead
+        printQRInTerminal: false,
+        // THIS IS THE FIX: This tells WhatsApp we are connecting via Google Chrome on desktop
+        browser: Browsers.macOS('Desktop') 
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -20,14 +22,19 @@ async function startBot() {
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
-                let code = await sock.requestPairingCode("2349036106257");
+                // Your formatted number
+                let phoneNumber = "2349036106257"; 
+                console.log(`[JOMS AI BOT] Linking request sent to WhatsApp for ${phoneNumber}...`);
+                
+                let code = await sock.requestPairingCode(phoneNumber);
+                
                 console.log('\n====================================');
                 console.log(`🤖 JOMS AI BOT PAIRING CODE: ${code}`);
                 console.log('====================================\n');
             } catch (err) {
                 console.log("Error generating pairing code: ", err);
             }
-        }, 5000); // Wait 5 seconds for initialization
+        }, 6000); // Give the connection 6 seconds to initialize fully
     }
 
     // Handle Messages
@@ -41,7 +48,7 @@ async function startBot() {
         if (text.toLowerCase().trim() === '!ping') {
             await sock.sendMessage(from, { text: 'Pong! 🏓\n_JOMS AI BOT is running fast without Chrome!_' });
         } else if (text.toLowerCase().trim() === '!hello') {
-            await sock.sendMessage(from, { text: 'Hello! I am *JOMS AI BOT* 🤖' });
+            await sock.sendMessage(from, { text: 'Hello! I am *JOMS AI BOT* 🤖, your automated assistant.' });
         }
     });
 }
