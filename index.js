@@ -1,5 +1,5 @@
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, Browsers } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, Browsers, DisconnectReason } = require('@whiskeysockets/baileys');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,25 +17,40 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Request Pairing Code automatically on boot if not linked
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                let phoneNumber = "2349036106257"; 
-                console.log(`[JOMS AI BOT] Sending stabilized pairing request for ${phoneNumber}...`);
-                
-                let code = await sock.requestPairingCode(phoneNumber);
-                
-                console.log('\n====================================');
-                console.log(`🤖 JOMS AI BOT PAIRING CODE: ${code}`);
-                console.log('====================================\n');
-            } catch (err) {
-                console.log("[JOMS AI BOT] Pairing attempt failed: ", err.message || err);
-            }
-        }, 15000); 
-    }
+    // Track connection state dynamically instead of using a blind timer
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
 
-    // Handle Messages
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('[JOMS AI BOT] Connection closed. Reconnecting:', shouldReconnect);
+            if (shouldReconnect) startBot(); // Auto-restart if dropped
+        } 
+        
+        else if (connection === 'open') {
+            console.log('📶 [JOMS AI BOT] Secure connection established with WhatsApp servers!');
+            
+            // Trigger pairing code ONLY when the socket connection is 100% active and stable
+            if (!sock.authState.creds.registered) {
+                try {
+                    let phoneNumber = "2349036106257"; 
+                    console.log(`[JOMS AI BOT] Requesting pairing code for stable line: ${phoneNumber}...`);
+                    
+                    // Small 3-second delay on an open connection ensures complete handshake stability
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    let code = await sock.requestPairingCode(phoneNumber);
+                    
+                    console.log('\n====================================');
+                    console.log(`🤖 JOMS AI BOT PAIRING CODE: ${code}`);
+                    console.log('====================================\n');
+                } catch (err) {
+                    console.log("[JOMS AI BOT] Pairing attempt failed: ", err.message || err);
+                }
+            }
+        }
+    });
+
+    // Handle incoming messages
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
@@ -44,7 +59,7 @@ async function startBot() {
         const from = msg.key.remoteJid;
 
         if (text.toLowerCase().trim() === '!ping') {
-            await sock.sendMessage(from, { text: 'Pong! 🏓\n_JOMS AI BOT is running fast without Chrome!_' });
+            await sock.sendMessage(from, { text: 'Pong! 🏓\n_JOMS AI BOT is running fast!_' });
         } else if (text.toLowerCase().trim() === '!hello') {
             await sock.sendMessage(from, { text: 'Hello! I am *JOMS AI BOT* 🤖, your automated assistant.' });
         }
