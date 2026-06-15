@@ -7,7 +7,6 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('<h1>JOMS AI BOT Server is Online! ⚡</h1>'));
 app.listen(PORT, () => console.log('Server running on port ' + PORT));
 
-// Automatically clear out corrupt folders on boot
 if (!fs.existsSync('auth_info_baileys/creds.json')) {
     if (fs.existsSync('auth_info_baileys')) {
         console.log('[JOMS AI BOT] Flushing corrupt auth directory structural frames...');
@@ -21,9 +20,7 @@ async function startBot() {
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        logger: pino({ level: 'silent' }), // Suppresses spam logs so you can see your code clearly
-        
-        // This forces WhatsApp to label the bot as Chrome (macOS) on your phone
+        // REMOVED SILENT LOGGER: Let's see exactly what WhatsApp is telling us
         browser: ["Chrome", "macOS", "120.0.0.0"] 
     });
 
@@ -36,7 +33,7 @@ async function startBot() {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('[JOMS AI BOT] Socket closed. Spinning up reconnect frame...');
             if (shouldReconnect) {
-                setTimeout(() => startBot(), 10000); // 10-second safety cooldown
+                setTimeout(() => startBot(), 15000); // 15-second backoff to prevent spamming
             }
         } 
         
@@ -44,15 +41,16 @@ async function startBot() {
             console.log('📶 [JOMS AI BOT] Secure connection established with WhatsApp servers!');
         }
 
-        // Fire pairing code ONLY when the socket is resting and unauthenticated
         if (!sock.authState.creds.registered && !sock.authState.creds.me) {
             if (global.pairingRequested) return; 
             global.pairingRequested = true;
 
+            // Increased to 25 seconds to completely clear Render's port probing phase
+            console.log("[JOMS AI BOT] Connection cooling down... Code generation queued.");
             setTimeout(async () => {
                 try {
-                    let phoneNumber = "2349036106257"; // Your phone number hardcoded for Render
-                    console.log(`[JOMS AI BOT] Isolated line ready. Dispatching request for: ${phoneNumber}...`);
+                    let phoneNumber = "2349036106257"; 
+                    console.log(`[JOMS AI BOT] Isolated line stable. Requesting code for: ${phoneNumber}...`);
                     
                     let code = await sock.requestPairingCode(phoneNumber);
                     
@@ -60,10 +58,10 @@ async function startBot() {
                     console.log(`🤖 YOUR CHROME (macOS) PAIRING CODE: ${code}`);
                     console.log('====================================\n');
                 } catch (err) {
-                    console.log("[JOMS AI BOT] Handshake collision occurred. Resetting pairing availability...");
+                    console.log("[JOMS AI BOT] Pairing error caught:", err);
                     global.pairingRequested = false;
                 }
-            }, 10000); // Gives Render plenty of time to clear initial network overhead
+            }, 25000); 
         }
     });
 
@@ -79,7 +77,5 @@ async function startBot() {
         }
     });
 }
-
-function pino() { return require('pino')(...arguments); }
 
 startBot();
